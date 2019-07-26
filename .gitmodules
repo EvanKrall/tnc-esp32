@@ -1,0 +1,3 @@
+[submodule "components/LibAPRS"]
+	path = components/LibAPRS
+	url = https://github.com/EvanKrall/LibAPRS.git

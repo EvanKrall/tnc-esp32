@@ -7,7 +7,7 @@
 #include "driver/gpio.h"
 #include "driver/i2s.h"
 #include "esp_log.h"
-
+#include "LibAPRS.h"
 
 
 #define GPIO_AUDIO_TRIGGER 37
@@ -23,8 +23,10 @@ static xQueueHandle send_audio_queue = NULL;
 
 //i2s number
 #define TNC_I2S_NUM           (0)
+#define DESIRED_SAMPLE_RATE   (9600)
+#define OVERSAMPLING          (10)
 //i2s sample rate
-#define TNC_I2S_SAMPLE_RATE   (9600)
+#define TNC_I2S_SAMPLE_RATE   (DESIRED_SAMPLE_RATE * OVERSAMPLING)
 //i2s data bits
 #define TNC_I2S_SAMPLE_BITS   (16)
 // 125ms of audio should be plenty I think
@@ -43,6 +45,10 @@ static xQueueHandle send_audio_queue = NULL;
 uint16_t audio_buf1[TNC_I2S_BUFLEN];
 uint16_t audio_buf2[TNC_I2S_BUFLEN];
 
+#define FULL_BUF_LEN (DESIRED_SAMPLE_RATE * 2)
+int8_t audio_buf_full[FULL_BUF_LEN];
+size_t audio_buf_full_idx = 0;
+
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
@@ -50,10 +56,8 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 }
 
 void record_audio(uint16_t *buffer) {
-    i2s_adc_enable(TNC_I2S_NUM);
     size_t bytes_read;
     esp_err_t error = i2s_read(TNC_I2S_NUM, (void*) buffer, TNC_I2S_BUFLEN * sizeof(uint16_t), &bytes_read, portMAX_DELAY /*(3 * TNC_I2S_SAMPLE_RATE / TNC_I2S_BUFLEN / 2 / portTICK_PERIOD_MS) */);
-    i2s_adc_disable(TNC_I2S_NUM);
 
     for (int i=0; i<TNC_I2S_BUFLEN; i++) {
         buffer[i] = 4095 - buffer[i];
@@ -62,17 +66,24 @@ void record_audio(uint16_t *buffer) {
     // printf("error %d, read %d bytes\n", error, bytes_read);
 }
 
-
 void process_audio(uint16_t *buffer) {
-    printf("processing buffer %d\n", (int)buffer);
-    for (int i=0; i<TNC_I2S_BUFLEN; i++) {
-        printf(" %4d", buffer[i]);
-        if (i%20 == 0) {
-            printf("\n");
+    // printf("processing buffer %d\n", (int)buffer);
+    for (int i=0; i<TNC_I2S_BUFLEN; i += OVERSAMPLING) {
+        int average = 0;
+            for (int j=0; j<OVERSAMPLING && j+i < TNC_I2S_BUFLEN; j++) {
+            average += buffer[i+j];
+        }
+        average /= OVERSAMPLING;
+
+        average -= 717; // empirically measured hackily, we high-pass-filter later so this doesn't matter much.
+        average = average * 255 / 1564;
+        if (average < -128) average = -128;
+        if (average > 127) average = 127;
+
+        if (audio_buf_full_idx < FULL_BUF_LEN) {
+            audio_buf_full[audio_buf_full_idx++] = average;
         }
     }
-    // for byte in bytes:
-    //   call function to process adc value
 }
 
 void send_audio_task() {
@@ -85,7 +96,7 @@ void send_audio_task() {
             //   modulate data into buffer
             //   send buffer
             // release lock
-            printf("Would have sent audio\n");  
+            printf("Would have sent audio\n");
         }
     }
 }
@@ -102,8 +113,9 @@ void example_i2s_init()
         .channel_format = TNC_I2S_FORMAT,
         .intr_alloc_flags = 0,
         .dma_buf_count = 2,
-        .dma_buf_len = 1024,
-        .use_apll = 1,
+        .dma_buf_len = 300,
+        // .use_apll = 1,
+        .use_apll = 0,
      };
      //install and start i2s driver
      i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
@@ -133,6 +145,9 @@ void receive_audio_task() {
             uint16_t *buffer = audio_buf1;
 
             int num_recordings = 0;
+
+            i2s_adc_enable(TNC_I2S_NUM);
+
             for (bool keep_recording = true; keep_recording; ) {
                 num_recordings++;
                 record_audio(buffer);
@@ -157,13 +172,55 @@ void receive_audio_task() {
                 }
             }
 
+            i2s_adc_disable(TNC_I2S_NUM);
+
+            int running_sum = 0;
+            uint8_t running_sum_len = 0;
+            #define MAX_RUNNING_SUM_LEN (DESIRED_SAMPLE_RATE / 600)
             ESP_LOG_LEVEL(ESP_LOG_INFO, "receive_audio_task", "did %d recordings in %d ticks\n", num_recordings, 0);
+            uint8_t poll_timer = 0;
+
+            // viterbi(1.0);
+
+            for (int i=0; i<audio_buf_full_idx; i++) {
+                int16_t sample = audio_buf_full[i];
+                running_sum += sample;
+                if (running_sum_len >= MAX_RUNNING_SUM_LEN) {
+                    running_sum -= audio_buf_full[i - (running_sum_len)];
+                } else {
+                    running_sum_len++;
+                }
+
+                sample -= running_sum / running_sum_len;
+                if (sample > 127) sample = 127;
+                if (sample < -128) sample = 128;
+
+                // printf("%d ", sample);
+                // if (i%20 == 19) printf("\n");
+
+                AFSK_adc_isr(AFSK_modem, sample);
+                poll_timer++;
+                if (poll_timer > 3) {
+                    poll_timer = 0;
+                    APRS_poll();
+                }
+            }
+
+            audio_buf_full_idx = 0;
 
             gpio_isr_handler_add(GPIO_AUDIO_TRIGGER, gpio_isr_handler, (void*) GPIO_AUDIO_TRIGGER);
         }
     }
 }
 
+
+// callback from LibAPRS
+void aprs_msg_callback(struct AX25Msg *msg) {
+    printf("Got a message!\n");
+    printf("SRC: %.6s-%d. ", msg->src.call, msg->src.ssid);
+    printf("DST: %.6s-%d. ", msg->dst.call, msg->dst.ssid);
+    printf("Data: %.*s\n", msg->len, msg->info);
+}
 
 void set_up_interrupts() {
     gpio_config_t io_conf;
@@ -191,6 +248,7 @@ void set_up_interrupts() {
 
 esp_err_t app_main() {
     // set up interrupt on input pin to call receive_audio_task
+    APRS_init(0, false);
     set_up_interrupts();
     example_i2s_init();
     // start send_audio_task
