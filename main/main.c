@@ -8,7 +8,7 @@
 #include "driver/i2s.h"
 #include "esp_log.h"
 #include "LibAPRS.h"
-
+#include "tcp_kiss.h"
 
 #define GPIO_AUDIO_TRIGGER 37
 // #define GPIO_AUDIO_IN 36
@@ -216,6 +216,7 @@ void receive_audio_task() {
 
 // callback from LibAPRS
 void aprs_msg_callback(struct AX25Msg *msg) {
+    forward_packet_to_kiss(msg);
     printf("Got a message!\n");
     printf("SRC: %.6s-%d. ", msg->src.call, msg->src.ssid);
     printf("DST: %.6s-%d. ", msg->dst.call, msg->dst.ssid);
@@ -246,6 +247,7 @@ void set_up_interrupts() {
     gpio_isr_handler_add(GPIO_AUDIO_TRIGGER, gpio_isr_handler, (void*) GPIO_AUDIO_TRIGGER);
 }
 
+void start_wifi(); // from softap.c
 esp_err_t app_main() {
     // set up interrupt on input pin to call receive_audio_task
     APRS_init(0, false);
@@ -253,6 +255,9 @@ esp_err_t app_main() {
     example_i2s_init();
     // start send_audio_task
     xTaskCreate(send_audio_task, "send_audio_task", 2048, NULL, 10, NULL);
+
+    start_wifi();
+    start_kiss_server();
 
     // start process_audio_task on other core
     // wait?
