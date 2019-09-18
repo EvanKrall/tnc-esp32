@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "LibAPRS.h"
 #include "tcp_kiss.h"
+#include "device.h"
 
 #define GPIO_AUDIO_TRIGGER 37
 // #define GPIO_AUDIO_IN 36
@@ -18,29 +19,7 @@
 
 static xQueueHandle gpio_evt_queue = NULL;
 static xQueueHandle send_audio_queue = NULL;
-// TODO: make lock
-// TODO: make 2 audio buffers.
 
-//i2s number
-#define TNC_I2S_NUM           (0)
-#define DESIRED_SAMPLE_RATE   (9600)
-#define OVERSAMPLING          (10)
-//i2s sample rate
-#define TNC_I2S_SAMPLE_RATE   (DESIRED_SAMPLE_RATE * OVERSAMPLING)
-//i2s data bits
-#define TNC_I2S_SAMPLE_BITS   (16)
-// 125ms of audio should be plenty I think
-#define TNC_I2S_BUFLEN        (TNC_I2S_SAMPLE_RATE / 8)
-
-//I2S data format
-#define TNC_I2S_FORMAT        (I2S_CHANNEL_FMT_ONLY_RIGHT)
-#define TNC_I2S_CHANNEL_NUM   (1)
-
-//I2S built-in ADC unit
-#define I2S_ADC_UNIT              ADC_UNIT_1
-#define I2S_ADC_CHANNEL           ADC1_CHANNEL_0
-
-#define KEEP_RECORDING_THRESH  (5)
 
 uint16_t audio_buf1[TNC_I2S_BUFLEN];
 uint16_t audio_buf2[TNC_I2S_BUFLEN];
@@ -70,7 +49,7 @@ void process_audio(uint16_t *buffer) {
     // printf("processing buffer %d\n", (int)buffer);
     for (int i=0; i<TNC_I2S_BUFLEN; i += OVERSAMPLING) {
         int average = 0;
-            for (int j=0; j<OVERSAMPLING && j+i < TNC_I2S_BUFLEN; j++) {
+        for (int j=0; j<OVERSAMPLING && j+i < TNC_I2S_BUFLEN; j++) {
             average += buffer[i+j];
         }
         average /= OVERSAMPLING;
@@ -251,6 +230,10 @@ void start_wifi(); // from softap.c
 esp_err_t app_main() {
     // set up interrupt on input pin to call receive_audio_task
     APRS_init(0, false);
+    APRS_setCallsign("KC9IAE", 1);
+    APRS_setDestination("APRS", 0);
+    APRS_setPath1("WIDE1", 1);
+    APRS_setPath1("WIDE2", 1);
     set_up_interrupts();
     example_i2s_init();
     // start send_audio_task

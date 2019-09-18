@@ -83,7 +83,7 @@ static int accepted_socket = -1;
 
 static void tcp_server_task(void *pvParameters)
 {
-    char rx_buffer[128];
+    char rx_buffer[2048];
     int listen_sock = bind_port();
 
     while (listen_sock > 0) {
@@ -123,6 +123,10 @@ static void tcp_server_task(void *pvParameters)
                 ESP_LOGI(TAG, "%s", rx_buffer);
 
                 int err = send(accepted_socket, rx_buffer, len, 0);
+                APRS_setPreamble(350);
+                APRS_setTail(150);
+                APRS_sendPkt(rx_buffer, len);
+                ESP_LOGI(TAG, "Transmitted data as AFSK");
                 if (err < 0) {
                     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
                     break;
@@ -144,12 +148,12 @@ void start_kiss_server()
 {
     ESP_ERROR_CHECK(nvs_flash_init());
     tcpip_adapter_init();
-    xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 5, NULL);
+    xTaskCreate(tcp_server_task, "tcp_server", 40960, NULL, 5, NULL);
 }
 
 
 #define BUFLEN (1024)
-char buf[BUFLEN];
+static char buf[BUFLEN];
 void forward_packet_to_kiss(struct AX25Msg *msg) {
     printf("Sending message to kiss socket");
     if (accepted_socket > 0) {
