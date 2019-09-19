@@ -18,8 +18,6 @@
 
 
 static xQueueHandle gpio_evt_queue = NULL;
-static xQueueHandle send_audio_queue = NULL;
-
 
 uint16_t audio_buf1[TNC_I2S_BUFLEN];
 uint16_t audio_buf2[TNC_I2S_BUFLEN];
@@ -61,21 +59,6 @@ void process_audio(uint16_t *buffer) {
 
         if (audio_buf_full_idx < FULL_BUF_LEN) {
             audio_buf_full[audio_buf_full_idx++] = average;
-        }
-    }
-}
-
-void send_audio_task() {
-    // wait for data from queue
-    uint32_t blah;
-    for (;;) {
-        if (xQueueReceive(send_audio_queue, &blah, portMAX_DELAY)) {
-            // while data to send:
-            //   grab audio lock if don't have
-            //   modulate data into buffer
-            //   send buffer
-            // release lock
-            printf("Would have sent audio\n");
         }
     }
 }
@@ -216,7 +199,6 @@ void set_up_interrupts() {
 
     //create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-    send_audio_queue = xQueueCreate(10, sizeof(uint32_t));
     //start gpio task
     xTaskCreate(receive_audio_task, "receive_audio_task", 2048, NULL, 10, NULL);
 
@@ -236,8 +218,6 @@ esp_err_t app_main() {
     APRS_setPath1("WIDE2", 1);
     set_up_interrupts();
     example_i2s_init();
-    // start send_audio_task
-    xTaskCreate(send_audio_task, "send_audio_task", 2048, NULL, 10, NULL);
 
     start_wifi();
     start_kiss_server();
