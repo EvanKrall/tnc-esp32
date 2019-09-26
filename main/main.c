@@ -9,6 +9,7 @@
 #include "LibAPRS.h"
 #include "tcp_kiss.h"
 #include "device.h"
+#include "http_aprs.h"
 
 
 // callback from LibAPRS
@@ -30,6 +31,7 @@ esp_err_t app_main() {
 
     start_wifi();
     start_kiss_server();
+    start_webserver();
 
     return 0;
 }

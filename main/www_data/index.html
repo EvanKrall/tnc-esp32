@@ -1,0 +1,30 @@
+<html>
+<script>
+function showPosition(position, error) {
+    console.log(position);
+    window.position = position;
+    if (error) {
+        console.log(error);
+    } else {
+        xhr = new XMLHttpRequest();
+        xhr.open('POST', "/location");
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState>3 && xhr.status==200) { console.log(xhr.responseText); }
+        };
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        position = {
+            "latitude": position.coords.latitude,
+            "longitude": position.coords.longitude,
+            "altitude": position.coords.altitude,
+        };
+
+        params = Object.keys(position).map(
+            function(k){ return encodeURIComponent(k) + '=' + encodeURIComponent(position[k]) }
+        ).join('&');
+        xhr.send(params);
+    }
+};
+navigator.geolocation.getCurrentPosition(showPosition);
+</script>
+</html>
