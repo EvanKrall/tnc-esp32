@@ -27,7 +27,7 @@ esp_err_t app_main() {
     APRS_setCallsign("KC9IAE", 1);
     APRS_setDestination("APRS", 0);
     APRS_setPath1("WIDE1", 1);
-    APRS_setPath1("WIDE2", 1);
+    APRS_setPath2("WIDE2", 1);
 
     start_wifi();
     start_kiss_server();

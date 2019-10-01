@@ -1,4 +1,5 @@
 <html>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <script>
 function showPosition(position, error) {
     console.log(position);
@@ -25,6 +26,11 @@ function showPosition(position, error) {
         xhr.send(params);
     }
 };
-navigator.geolocation.getCurrentPosition(showPosition);
+
+function getPosition() {
+    navigator.geolocation.getCurrentPosition(showPosition);
+}
 </script>
+
+<button onclick="getPosition()">Broadcast position</button>
 </html>

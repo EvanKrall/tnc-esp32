@@ -8,6 +8,43 @@ esp_err_t handler_get_root(httpd_req_t *req) {
     return ESP_OK;
 }
 
+void format_latlon(float fDegrees, char *buf, size_t buflen, bool is_lat) {
+    bool southwest = false;
+    if (fDegrees < 0.0) {
+        fDegrees *= -1;
+        southwest = true;
+    }
+
+    int degrees = (int)fDegrees;
+    fDegrees -= degrees;
+    fDegrees *= 60;
+    int minutes = (int)fDegrees;
+    fDegrees -= minutes;
+    fDegrees *= 60;
+    int seconds = (int)fDegrees;
+
+    char nsew;
+    if (is_lat) {
+        if (southwest) {
+            nsew = 'S';
+        } else {
+            nsew = 'N';
+        }
+    } else {
+        if (southwest) {
+            nsew = 'W';
+        } else {
+            nsew = 'E';
+        }
+    }
+
+    if (is_lat) {
+        snprintf(buf, buflen, "%02d%02d.%02d%c", degrees, minutes, seconds, nsew);
+    } else {
+        snprintf(buf, buflen, "%03d%02d.%02d%c", degrees, minutes, seconds, nsew);
+    }
+}
+
 esp_err_t handler_post_location(httpd_req_t *req) {
     char content[100];
     /* Truncate if content length larger than the buffer */
@@ -28,11 +65,16 @@ esp_err_t handler_post_location(httpd_req_t *req) {
     }
     content[ret] = '\0';
 
-    char valbuf[10];
+    char valbuf[20];
+    char outbuf[10]; // 10 (9+\0) for longitude, 9 (8+\0) for latitude
+
     httpd_query_key_value(content, "longitude", valbuf, sizeof(valbuf));
-    APRS_setLon(valbuf);
+    format_latlon(atof(valbuf), outbuf, 10, false);
+    APRS_setLon(outbuf);
+
     httpd_query_key_value(content, "latitude", valbuf, sizeof(valbuf));
-    APRS_setLat(valbuf);
+    format_latlon(atof(valbuf), outbuf, 10, true);
+    APRS_setLat(outbuf);
 
     // char aprsbuf[1024];
     APRS_sendLoc(NULL, 0);
@@ -42,7 +84,6 @@ esp_err_t handler_post_location(httpd_req_t *req) {
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
 }
-
 
 httpd_uri_t uri_get_root = {
     .uri      = "/",
